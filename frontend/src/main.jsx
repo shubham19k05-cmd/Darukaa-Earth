@@ -1,3 +1,4 @@
+import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Map, { Layer, NavigationControl, Source } from 'react-map-gl';
@@ -111,22 +112,20 @@ function Dashboard() {
     api(`/sites/${selected.id}/analytics`).then(setMetrics).catch((err) => setNotice(err.message));
   }, [selected]);
 
-  useEffect(() => {
-    if (!mapRef.current || !MAPBOX_TOKEN) return undefined;
-    const map = mapRef.current.getMap();
+  const onMapLoad = (e) => {
+    const map = e.target;
+    if (drawRef.current) return;
     const draw = new MapboxDraw({ displayControlsDefault: false, controls: { polygon: true, trash: true }, defaultMode: 'simple_select' });
     map.addControl(draw, 'top-right'); drawRef.current = draw;
     const created = (event) => {
       const feature = event.features?.[0];
       if (!feature) return;
-      draw.changeMode('simple_select');
       setPendingGeometry(feature.geometry);
       setSiteForm((current) => ({ ...current, project_id: current.project_id || projectId }));
       setShowSite(true);
     };
     map.on('draw.create', created);
-    return () => { map.off('draw.create', created); map.removeControl(draw); drawRef.current = null; };
-  }, []);
+  };
 
   const visibleSites = useMemo(() => projectId ? sites.filter((site) => String(site.project_id) === String(projectId)) : sites, [sites, projectId]);
   const geojson = useMemo(() => ({ type: 'FeatureCollection', features: visibleSites.filter((s) => s.geometry).map((s) => ({ type: 'Feature', geometry: s.geometry, properties: { id: s.id, name: s.name } })) }), [visibleSites]);
@@ -180,7 +179,7 @@ function Dashboard() {
         <div className="page-heading"><div><div className="eyebrow">IMPACT OVERVIEW</div><h1>{projects.find((p) => String(p.id) === String(projectId))?.name || 'Your projects'}</h1><p>Monitor land coverage, carbon and biodiversity performance from one spatial view.</p></div><button className="primary" onClick={() => { if (!projects.length) setShowProject(true); else setNotice('Choose the polygon tool on the map to draw a new site.'); }}>+ Add site</button></div>
         <div className="stats-grid"><StatCard label="Projects" value={summary?.projects ?? '—'} detail="managed in workspace" /><StatCard label="Mapped sites" value={summary?.sites ?? '—'} detail={`${summary?.active_sites ?? 0} active`} /><StatCard label="Land covered" value={summary ? `${summary.area_hectares.toLocaleString()} ha` : '—'} detail="from mapped polygons" /><StatCard label="Latest carbon" value={summary ? `${summary.latest_carbon_tonnes} t` : '—'} detail="latest recorded metric" /></div>
         <section className="map-panel"><div className="panel-header"><div><h2>Project map</h2><span>{visibleSites.length} mapped {visibleSites.length === 1 ? 'site' : 'sites'} · Click a polygon for details</span></div><div className="map-tip">⌖ <b>Draw</b> a polygon to add a site</div></div>
-          <div className="map-wrap">{MAPBOX_TOKEN ? <Map ref={mapRef} initialViewState={{ longitude: 78.9629, latitude: 22.5937, zoom: 4.4 }} mapboxAccessToken={MAPBOX_TOKEN} mapStyle="mapbox://styles/mapbox/light-v11" interactiveLayerIds={['site-fill']} onClick={(event) => { const feature = event.features?.[0]; if (feature?.properties?.id) selectSite(sites.find((s) => s.id === Number(feature.properties.id))); }} cursor="pointer"><NavigationControl position="bottom-right" /><Source id="sites" type="geojson" data={geojson}><Layer id="site-fill" type="fill" paint={{ 'fill-opacity': 0.3 }} /><Layer id="site-outline" type="line" paint={{ 'line-width': 2 }} /></Source></Map> : <div className="map-missing"><strong>Mapbox token required</strong><span>Set VITE_MAPBOX_TOKEN in frontend/.env to enable the interactive map.</span></div>}</div>
+          <div className="map-wrap">{MAPBOX_TOKEN ? <Map ref={mapRef} onLoad={onMapLoad} initialViewState={{ longitude: 78.9629, latitude: 22.5937, zoom: 4.4 }} mapboxAccessToken={MAPBOX_TOKEN} mapStyle="mapbox://styles/mapbox/light-v11" projection="mercator" interactiveLayerIds={['site-fill']} onClick={(event) => { const feature = event.features?.[0]; if (feature?.properties?.id) selectSite(sites.find((s) => s.id === Number(feature.properties.id))); }} cursor="pointer"><NavigationControl position="bottom-right" /><Source id="sites" type="geojson" data={geojson}><Layer id="site-fill" type="fill" paint={{ 'fill-opacity': 0.3 }} /><Layer id="site-outline" type="line" paint={{ 'line-width': 2 }} /></Source></Map> : <div className="map-missing"><strong>Mapbox token required</strong><span>Set VITE_MAPBOX_TOKEN in frontend/.env to enable the interactive map.</span></div>}</div>
         </section>
         <section className="analytics-panel"><div className="analytics-title"><div><div className="eyebrow">SITE ANALYTICS</div><h2>{selected?.name || 'Select a site'}</h2><p>{selected ? `${selected.status} · ${selected.area_hectares.toFixed(2)} hectares` : 'Select a polygon or site from the directory to view performance over time.'}</p></div>{selected && <div className="metric-chips"><span>Carbon trend ↗</span><span>Biodiversity trend ↗</span></div>}</div>{selected && metrics.length ? <div className="chart"><Line data={chartData} options={{ responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { legend: { position: 'bottom' } }, scales: { y: { beginAtZero: true, grid: { drawBorder: false } }, x: { grid: { display: false } } } }} /></div> : <div className="analytics-empty"><div className="empty-icon">⌁</div><b>No site selected</b><span>Choose a mapped site to inspect its six-month analytics series.</span></div>}</section>
       </main>
